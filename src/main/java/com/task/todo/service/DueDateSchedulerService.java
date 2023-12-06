@@ -8,11 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.quartz.Job;
 import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
-import org.quartz.JobExecutionException;
 import org.quartz.JobKey;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
-import org.quartz.SimpleScheduleBuilder;
 import org.quartz.Trigger;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -20,19 +18,21 @@ import org.springframework.stereotype.Service;
 
 import java.sql.Date;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.UUID;
 
+import static java.time.temporal.ChronoUnit.SECONDS;
 import static org.quartz.JobBuilder.newJob;
+import static org.quartz.SimpleScheduleBuilder.simpleSchedule;
 import static org.quartz.TriggerBuilder.newTrigger;
 
 @Service
 @Slf4j
 public class DueDateSchedulerService {
 
-    private final static int FIVE_MINUTES_IN_MILLISECOND = 5 * 60 * 1000;
+    private final static int FIVE_SECONDS_IN_MILLISECOND = 5 * 1000;
     private final Scheduler scheduler;
     private final ItemService itemService;
 
@@ -50,19 +50,21 @@ public class DueDateSchedulerService {
         }
     }
 
-    public void addNewSchedulerForItem(ItemEntity itemEntity) {
+    public void addOrUpdateSchedulerForItem(ItemEntity itemEntity) {
         try {
+            scheduler.deleteJob(JobKey.jobKey(itemEntity.getId().toString()));
             JobDetail job = newJob(UpdateDueDateCronJob.class)
                     .withIdentity(itemEntity.getId().toString())
                     .build();
             Trigger trigger = newTrigger()
-                    //.startAt(Date.from(itemEntity.getDueDate()
-                      //      .plus(1, ChronoUnit.SECONDS).toInstant(ZoneOffset.UTC)))
-                    .startAt(Date.from(LocalDateTime.now()
-                    .plus(5, ChronoUnit.SECONDS).toInstant(ZoneOffset.UTC)))
-                    .withSchedule(SimpleScheduleBuilder.simpleSchedule()
+                    .startAt(Date.from(itemEntity.getDueDate()
+                            .plus(1, SECONDS)
+                            .atZone(TimeZone.getDefault().toZoneId()).toInstant()))
+                    .withSchedule(simpleSchedule()
                             .withIntervalInSeconds(1)
-                            .withRepeatCount(5))
+                            .withRepeatCount(0)
+                            .withMisfireHandlingInstructionFireNow()
+                    )
                     .build();
             scheduler.scheduleJob(job, trigger);
         } catch (SchedulerException schedulerException) {
@@ -70,25 +72,25 @@ public class DueDateSchedulerService {
         }
     }
 
-    @Scheduled(fixedDelay = FIVE_MINUTES_IN_MILLISECOND)
+    @Scheduled(fixedRateString = "${todo.duedate.cron.intervalInMillisecond}", initialDelay = FIVE_SECONDS_IN_MILLISECOND)
     public void checkDueDateCronJob() {
         log.info("checkDueDateCronJob started");
         List<UUID> itemIds = itemService.updateDueDates();
         List<JobKey> jobKeys = itemIds.stream().map(i -> JobKey.jobKey(i.toString())).toList();
         try {
-
             scheduler.deleteJobs(jobKeys);
         } catch (SchedulerException schedulerException) {
             log.error("Error on deleting with ids:" + itemIds, schedulerException);
         }
-        log.info("checkDueDateCronJob ended. {} item(s) processed",itemIds.size());
+        log.info("checkDueDateCronJob ended. {} item(s) processed", itemIds.size());
     }
 
 
     class UpdateDueDateCronJob implements Job {
-        public void execute(JobExecutionContext context) throws JobExecutionException {
+        public void execute(JobExecutionContext context) {
             UUID itemId = null;
             try {
+                log.info("UpdateDueDateCronJob started");
                 JobKey jobKey = context.getJobDetail().getKey();
                 itemId = UUID.fromString(jobKey.getName());
                 ItemDto itemDto = itemService.findById(itemId);
@@ -97,6 +99,7 @@ public class DueDateSchedulerService {
                     itemService.updatePartialItem(itemId, itemDto);
                 }
                 scheduler.deleteJob(jobKey);
+                log.info("UpdateDueDateCronJob ended with key: {}", itemId);
             } catch (SchedulerException schedulerException) {
                 log.error("Error on deleting with id:" + itemId, schedulerException);
             }

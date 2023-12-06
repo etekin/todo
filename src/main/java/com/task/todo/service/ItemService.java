@@ -53,8 +53,15 @@ public class ItemService {
             itemEntity.setCompletedDate(null);
         }
 
+        boolean dueDateUpdated = itemDto.getDueDate() != null &&
+                !itemEntity.getDueDate().equals(itemDto.getDueDate());
+
         itemConverter.mapPartialToEntity(itemDto, itemEntity);
-        itemRepository.save(itemEntity);
+        ItemEntity savedItem = itemRepository.save(itemEntity);
+
+        if (dueDateUpdated) {
+            dueDateSchedulerService.addOrUpdateSchedulerForItem(savedItem);
+        }
 
     }
 
@@ -73,7 +80,7 @@ public class ItemService {
         }
 
         ItemEntity savedItem = itemRepository.save(itemEntity);
-        dueDateSchedulerService.addNewSchedulerForItem(savedItem);
+        dueDateSchedulerService.addOrUpdateSchedulerForItem(savedItem);
         return savedItem.getId();
     }
 
@@ -90,7 +97,7 @@ public class ItemService {
     @Transactional
     public List<UUID> updateDueDates() {
         List<ItemEntity> undoneItems = itemRepository.findAllByDueDateLessThanEqualAndStatus(LocalDateTime.now(), ItemStatus.UNDONE);
-        List<UUID> itemIds = undoneItems.stream().map(i -> i.getId()).toList();
+        List<UUID> itemIds = undoneItems.stream().map(ItemEntity::getId).toList();
         itemRepository.updateItemsStatus(ItemStatus.DUE_DATE_PASSED, itemIds);
         return itemIds;
     }

@@ -25,7 +25,7 @@ UUID has been used as an entity id due to prevent possible IDOR security vulnera
 - Only the id of the saving entity is returned from POST method. The whole object can be returned instead of that. It
   depends on context.
 - A very simple filtering method was implemented. An advanced filtering feature can be implemented. Ex:
-
+- An AOP logging mechanism should be implemented. Currently, logging is poor.
 ```java
 @PostMapping("/items-by-filter")
 public ResponseEntity<List<ItemDto>>filterItems(@RequestBody ItemFilter filter){

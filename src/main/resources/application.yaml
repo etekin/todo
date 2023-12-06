@@ -16,3 +16,7 @@ spring:
   docker:
     compose:
       enabled: false
+todo:
+  duedate:
+    cron:
+      intervalInMillisecond: 1800000 #30 minutes
